@@ -51,18 +51,68 @@
 
   <div v-if="result" class="card">
     <h2>评估结果</h2>
-    <p><strong>风险分值：</strong>{{ fmt(result.risk_score) }}</p>
-    <p><strong>风险等级：</strong><span class="tag">{{ result.risk_level }}</span></p>
-    <p><strong>建议：</strong>{{ result.recommendations }}</p>
-    <h3>关键影响因素</h3>
-    <table>
-      <tr><th>特征</th><th>贡献度</th></tr>
-      <tr v-for="(v,k) in result.top_factors" :key="k">
-        <td>{{ k }}</td><td>{{ v.toFixed(4) }}</td>
-      </tr>
-    </table>
+    <div class="result-grid">
+      <div class="result-section">
+        <h3>风险评估</h3>
+        <p><strong>风险分值：</strong>{{ fmt(result.risk_score) }}</p>
+        <p><strong>风险等级：</strong><span class="tag">{{ result.risk_level }}</span></p>
+        <p><strong>置信度：</strong>{{ fmt(result.confidence) }}</p>
+      </div>
+      
+      <div class="result-section" v-if="result.image_analysis">
+        <h3>图像分析</h3>
+        <p><strong>图像状态：</strong>{{ result.image_analysis.status }}</p>
+        <p><strong>图像尺寸：</strong>{{ result.image_analysis.dimensions?.join('×') || '未知' }}</p>
+        <p><strong>特征数量：</strong>{{ result.image_analysis.features_extracted || 0 }}</p>
+      </div>
+    </div>
 
-    <button @click="generateReport">生成报告</button>
+    <div v-if="result.segmentation_results" class="result-section">
+      <h3>分割分析结果</h3>
+      <div class="segmentation-grid">
+        <div><strong>检测到区域：</strong>{{ result.segmentation_results.regions_detected }}</div>
+        <div><strong>最大区域面积：</strong>{{ result.segmentation_results.largest_area }}</div>
+        <div><strong>总面积：</strong>{{ result.segmentation_results.total_area }}</div>
+        <div><strong>区域数量：</strong>{{ result.segmentation_results.region_count }}</div>
+      </div>
+    </div>
+
+    <div class="result-section">
+      <h3>详细分析</h3>
+      <p>{{ result.detailed_analysis }}</p>
+    </div>
+
+    <div class="result-section">
+      <h3>个性化建议</h3>
+      <ul class="recommendations">
+        <li v-for="rec in result.recommendations" :key="rec">{{ rec }}</li>
+      </ul>
+    </div>
+
+    <div class="result-section">
+      <h3>关键影响因素</h3>
+      <table>
+        <tr><th>特征</th><th>贡献度</th></tr>
+        <tr v-for="(v,k) in result.top_factors" :key="k">
+          <td>{{ k }}</td><td>{{ v.toFixed(4) }}</td>
+        </tr>
+      </table>
+    </div>
+
+    <div v-if="result.model_performance" class="result-section">
+      <h3>模型性能指标</h3>
+      <div class="performance-grid">
+        <div><strong>准确率：</strong>{{ fmt(result.model_performance.accuracy) }}</div>
+        <div><strong>精确率：</strong>{{ fmt(result.model_performance.precision) }}</div>
+        <div><strong>召回率：</strong>{{ fmt(result.model_performance.recall) }}</div>
+        <div><strong>F1分数：</strong>{{ fmt(result.model_performance.f1_score) }}</div>
+      </div>
+    </div>
+
+    <div class="action-buttons">
+      <button @click="generateReport">生成报告</button>
+      <button @click="analyzeImageOnly" v-if="fileRef" class="secondary">单独分析图像</button>
+    </div>
   </div>
 </template>
 
@@ -104,6 +154,23 @@ async function assess(){
     patient.age = String(form.age)
   } catch (err){
     alert('评估失败：' + (err?.message || '未知错误'))
+  }
+}
+
+async function analyzeImageOnly(){
+  if (!fileRef.value) {
+    alert('请先选择图像文件')
+    return
+  }
+  try {
+    const fd = new FormData()
+    fd.append('image', fileRef.value)
+    const { data } = await api.post('/api/v1/image/analyze', fd, { 
+      headers: { 'Content-Type': 'multipart/form-data' } 
+    })
+    alert(`图像分析完成：\n状态：${data.status}\n尺寸：${data.dimensions?.join('×') || '未知'}\n特征数量：${data.features_extracted || 0}`)
+  } catch (err){
+    alert('图像分析失败：' + (err?.response?.data?.detail || err?.message || '未知错误'))
   }
 }
 
@@ -213,7 +280,84 @@ tr:nth-child(even) td { background: rgba(255,255,255,0.02); }
 
 @keyframes fadeInUp { 0% { opacity: 0; transform: translateY(8px);} 100% { opacity: 1; transform: translateY(0);} }
 
+/* 新增样式 */
+.result-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.result-section {
+  background: rgba(18,18,22,0.6);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.result-section h3 {
+  margin: 0 0 12px 0;
+  color: var(--gold);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.segmentation-grid, .performance-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.segmentation-grid div, .performance-grid div {
+  background: rgba(255,255,255,0.02);
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.05);
+}
+
+.recommendations {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.recommendations li {
+  background: rgba(212,175,55,0.08);
+  border: 1px solid rgba(212,175,55,0.2);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  color: var(--text);
+}
+
+.recommendations li:before {
+  content: "💡";
+  margin-right: 8px;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+  flex-wrap: wrap;
+}
+
+.action-buttons button.secondary {
+  background: rgba(255,255,255,0.1);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.action-buttons button.secondary:hover {
+  background: rgba(255,255,255,0.15);
+  transform: translateY(-1px);
+}
+
 @media (max-width: 720px){
   .grid { grid-template-columns: 1fr; }
+  .result-grid { grid-template-columns: 1fr; }
+  .segmentation-grid, .performance-grid { grid-template-columns: 1fr; }
+  .action-buttons { flex-direction: column; }
 }
 </style>

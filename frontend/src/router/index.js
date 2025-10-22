@@ -1,5 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import Screening from '../views/Screening.vue'
+import SystemMonitor from '../views/SystemMonitor.vue'
+import BatchAssessment from '../views/BatchAssessment.vue'
 
 // Admin views
 import AdminLogin from '../views/admin/AdminLogin.vue'
@@ -12,6 +14,8 @@ import AdminSchedules from '../views/admin/AdminSchedules.vue'
 
 const routes = [
   { path: '/', name: 'Home', component: Screening },
+  { path: '/monitor', name: 'SystemMonitor', component: SystemMonitor },
+  { path: '/batch-assessment', name: 'BatchAssessment', component: BatchAssessment },
   { path: '/admin/login', name: 'AdminLogin', component: AdminLogin },
   {
     path: '/admin',

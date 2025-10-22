@@ -8,14 +8,18 @@
       <button type="submit">新增资源</button>
     </form>
     <table style="margin-top:12px;">
-      <tr><th>ID</th><th>名称</th><th>类型</th><th>科室</th><th>状态</th></tr>
-      <tr v-for="r in resources" :key="r.id">
-        <td>{{ r.id }}</td>
-        <td>{{ r.name }}</td>
-        <td>{{ r.type || '-' }}</td>
-        <td>{{ r.department_id || '-' }}</td>
-        <td>{{ r.status }}</td>
-      </tr>
+      <thead>
+        <tr><th>ID</th><th>名称</th><th>类型</th><th>科室</th><th>状态</th></tr>
+      </thead>
+      <tbody>
+        <tr v-for="r in resources" :key="r.id">
+          <td>{{ r.id }}</td>
+          <td>{{ r.name }}</td>
+          <td>{{ r.type || '-' }}</td>
+          <td>{{ r.department_id || '-' }}</td>
+          <td>{{ r.status }}</td>
+        </tr>
+      </tbody>
     </table>
   </div>
 </template>

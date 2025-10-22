@@ -11,11 +11,15 @@
       <button type="submit">新增患者</button>
     </form>
     <table style="margin-top:12px;">
-      <tr><th>ID</th><th>姓名</th><th>年龄</th><th>性别</th><th>风险</th><th>操作</th></tr>
-      <tr v-for="p in patients" :key="p.id">
-        <td>{{ p.id }}</td><td>{{ p.name }}</td><td>{{ p.age || '-' }}</td><td>{{ p.sex || '-' }}</td><td>{{ p.risk_level || '-' }}</td>
-        <td><button @click="remove(p.id)" style="background:#b33;color:white;border:none;border-radius:8px;padding:6px 10px;">删除</button></td>
-      </tr>
+      <thead>
+        <tr><th>ID</th><th>姓名</th><th>年龄</th><th>性别</th><th>风险</th><th>操作</th></tr>
+      </thead>
+      <tbody>
+        <tr v-for="p in patients" :key="p.id">
+          <td>{{ p.id }}</td><td>{{ p.name }}</td><td>{{ p.age || '-' }}</td><td>{{ p.sex || '-' }}</td><td>{{ p.risk_level || '-' }}</td>
+          <td><button @click="remove(p.id)" style="background:#b33;color:white;border:none;border-radius:8px;padding:6px 10px;">删除</button></td>
+        </tr>
+      </tbody>
     </table>
   </div>
 </template>

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile, Form
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
@@ -6,6 +6,7 @@ import json
 import numpy as np
 from PIL import Image
 from io import BytesIO
+import logging
 
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
@@ -15,9 +16,20 @@ from .db import Base, engine, SessionLocal
 from .auth import router as auth_router
 from .routers_admin import router as admin_router
 from .models import User, Role, UserRole
+from .config import ensure_directories
+from .image_processor import medical_processor
+from .ai_models import ai_model_manager
+
+# 配置日志
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="肿瘤数智化筛查后端", version="0.1.0")
 Base.metadata.create_all(bind=engine)
+
+# 确保目录结构存在
+ensure_directories()
+logger.info("目录结构初始化完成")
 
 # 在空数据库时创建默认管理员（admin/123456）
 def _seed_default_admin():
@@ -51,7 +63,7 @@ app.include_router(admin_router)
 # CORS（前端开发模式使用代理或CORS均可）
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=["http://localhost:5173", "http://localhost:5174", "http://127.0.0.1:5173", "http://127.0.0.1:5174"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -112,6 +124,11 @@ pipe = Pipeline([
 ])
 pipe.fit(X_train, y_train)
 
+# 训练增强AI模型
+logger.info("开始训练增强AI模型...")
+ai_model_manager.train_enhanced_models(X_train, y_train)
+logger.info("增强AI模型训练完成")
+
 
 # ==== 工具函数 ====
 
@@ -151,8 +168,13 @@ def _contributions(x: np.ndarray) -> Dict[str, float]:
 class AssessResponse(BaseModel):
     risk_score: float
     risk_level: str
+    confidence: float
     top_factors: Dict[str, float]
-    recommendations: str
+    recommendations: list[str]
+    detailed_analysis: Dict[str, Any]
+    image_analysis: Optional[Dict[str, Any]] = None
+    segmentation_results: Optional[Dict[str, Any]] = None
+    model_performance: Dict[str, Any]
 
 
 @app.get("/api/v1/health")
@@ -165,53 +187,120 @@ async def assess(
     payload: str = Form(...),
     image: Optional[UploadFile] = File(None),
 ):
-    # 解析JSON载荷
-    data: Dict[str, Any] = json.loads(payload)
-    # 安全取值与默认
-    age = float(data.get("age", 45))
-    bmi = float(data.get("bmi", 24))
-    smoking = 1.0 if data.get("smoking", False) else 0.0
-    alcohol = 1.0 if data.get("alcohol", False) else 0.0
-    family_history = 1.0 if data.get("family_history", False) else 0.0
-    symptom_score = float(data.get("symptom_score", 3))
-    lab_cea = float(data.get("lab_cea", 3))
-    lab_ca125 = float(data.get("lab_ca125", 20))
-
-    img_mean = 120.0
-    img_std = 30.0
-    img_edge = 100.0
-    if image is not None:
-        file_bytes = await image.read()
-        feats = _image_features(file_bytes)
-        img_mean, img_std, img_edge = feats["img_mean"], feats["img_std"], feats["img_edge"]
-
-    x = np.array([
-        age, bmi, smoking, alcohol, family_history,
-        symptom_score, lab_cea, lab_ca125, img_mean, img_std, img_edge
-    ], dtype=float)
-
-    # 预测风险
-    prob = float(pipe.predict_proba([x])[0][1])
-    level = _risk_level(prob)
-
-    # 解释：按贡献度排序，取前5
-    contrib_map = _contributions(x)
-    top = dict(sorted(contrib_map.items(), key=lambda kv: abs(kv[1]), reverse=True)[:5])
-
-    # 建议（示例规则）
-    if level == "高风险":
-        rec = "建议尽快进行进一步影像/实验室检查，并咨询专业医生。"
-    elif level == "中风险":
-        rec = "建议定期复查，优化生活方式，必要时进行专项筛查。"
-    else:
-        rec = "保持健康生活方式，定期体检与随访。"
-
-    return AssessResponse(
-        risk_score=prob,
-        risk_level=level,
-        top_factors=top,
-        recommendations=rec,
-    )
+    try:
+        # 解析JSON载荷
+        data: Dict[str, Any] = json.loads(payload)
+        logger.info(f"收到评估请求: {data}")
+        
+        # 提取临床特征
+        clinical_features = {
+            "age": float(data.get("age", 45)),
+            "bmi": float(data.get("bmi", 24)),
+            "smoking": 1.0 if data.get("smoking", False) else 0.0,
+            "alcohol": 1.0 if data.get("alcohol", False) else 0.0,
+            "family_history": 1.0 if data.get("family_history", False) else 0.0,
+            "symptom_score": float(data.get("symptom_score", 3)),
+            "cea_level": float(data.get("lab_cea", 3)),
+            "ca125_level": float(data.get("lab_ca125", 20))
+        }
+        
+        # 图像处理
+        image_features = None
+        segmentation_results = None
+        image_analysis = None
+        
+        if image is not None:
+            logger.info("开始处理上传的图像...")
+            file_bytes = await image.read()
+            
+            # 验证图像
+            if not medical_processor.validate_image(file_bytes):
+                raise HTTPException(status_code=400, detail="无效的图像文件")
+            
+            # 图像预处理
+            processed_image = medical_processor.preprocess_image(file_bytes)
+            
+            # 图像增强
+            enhanced_image = medical_processor.enhance_medical_image(processed_image)
+            
+            # 提取高级图像特征
+            image_features = medical_processor.extract_advanced_features(enhanced_image)
+            
+            # 模拟肿瘤分割
+            segmentation_results = medical_processor.simulate_segmentation(enhanced_image)
+            
+            # 保存处理后的图像
+            import uuid
+            image_filename = f"processed_{uuid.uuid4().hex[:8]}.png"
+            saved_path = medical_processor.save_processed_image(enhanced_image, image_filename)
+            
+            image_analysis = {
+                "original_filename": image.filename,
+                "processed_filename": image_filename,
+                "file_size": len(file_bytes),
+                "image_features": image_features,
+                "processing_status": "success"
+            }
+            
+            logger.info("图像处理完成")
+        
+        # 使用增强AI模型进行综合预测
+        logger.info("开始AI风险评估...")
+        prediction_result = ai_model_manager.predict_risk_comprehensive(
+            features=clinical_features,
+            image_features=image_features,
+            segmentation_results=segmentation_results
+        )
+        
+        # 兼容性：使用传统模型进行对比
+        traditional_features = [
+            clinical_features["age"], clinical_features["bmi"], 
+            clinical_features["smoking"], clinical_features["alcohol"], 
+            clinical_features["family_history"], clinical_features["symptom_score"],
+            clinical_features["cea_level"], clinical_features["ca125_level"],
+            image_features.get("mean_intensity", 120.0) if image_features else 120.0,
+            image_features.get("std_intensity", 30.0) if image_features else 30.0,
+            image_features.get("edge_density", 0.1) * 1000 if image_features else 100.0
+        ]
+        
+        traditional_prob = float(pipe.predict_proba([traditional_features])[0][1])
+        traditional_level = _risk_level(traditional_prob)
+        
+        # 获取模型性能信息
+        model_performance = ai_model_manager.get_model_performance()
+        
+        # 准备响应
+        risk_factors_list = prediction_result["detailed_analysis"].get("risk_factors", [])
+        # 将风险因素列表转换为字典格式
+        top_factors_dict = {factor: 1.0 for factor in risk_factors_list} if risk_factors_list else {}
+        
+        response = AssessResponse(
+            risk_score=prediction_result["risk_probability"],
+            risk_level=prediction_result["risk_level"],
+            confidence=prediction_result["confidence"],
+            top_factors=top_factors_dict,
+            recommendations=prediction_result["recommendations"],
+            detailed_analysis=prediction_result["detailed_analysis"],
+            image_analysis=image_analysis,
+            segmentation_results=segmentation_results,
+            model_performance={
+                "enhanced_models": model_performance,
+                "traditional_comparison": {
+                    "probability": traditional_prob,
+                    "level": traditional_level
+                }
+            }
+        )
+        
+        logger.info(f"评估完成，风险等级: {prediction_result['risk_level']}")
+        return response
+        
+    except json.JSONDecodeError:
+        logger.error("JSON解析错误")
+        raise HTTPException(status_code=400, detail="无效的JSON格式")
+    except Exception as e:
+        logger.error(f"评估过程中发生错误: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"评估失败: {str(e)}")
 
 
 class ReportRequest(BaseModel):
@@ -264,3 +353,211 @@ async def report(req: ReportRequest) -> Dict[str, Any]:
     </html>
     """
     return {"format": "html", "content": html}
+
+
+# ==== 新增专业API端点 ====
+
+@app.get("/api/v1/models/performance")
+async def get_model_performance() -> Dict[str, Any]:
+    """获取AI模型性能指标"""
+    try:
+        performance = ai_model_manager.get_model_performance()
+        return {
+            "status": "success",
+            "data": performance,
+            "message": "模型性能数据获取成功"
+        }
+    except Exception as e:
+        logger.error(f"获取模型性能时出错: {e}")
+        raise HTTPException(status_code=500, detail=f"获取模型性能失败: {str(e)}")
+
+
+@app.post("/api/v1/image/analyze")
+async def analyze_image_only(image: UploadFile = File(...)) -> Dict[str, Any]:
+    """单独的图像分析端点"""
+    try:
+        logger.info("开始单独图像分析...")
+        file_bytes = await image.read()
+        
+        # 验证图像
+        if not medical_processor.validate_image(file_bytes):
+            raise HTTPException(status_code=400, detail="无效的图像文件")
+        
+        # 图像预处理
+        processed_image = medical_processor.preprocess_image(file_bytes)
+        
+        # 图像增强
+        enhanced_image = medical_processor.enhance_medical_image(processed_image)
+        
+        # 提取特征
+        image_features = medical_processor.extract_advanced_features(enhanced_image)
+        
+        # 分割分析
+        segmentation_results = medical_processor.simulate_segmentation(enhanced_image)
+        
+        return {
+            "status": "success",
+            "data": {
+                "image_features": image_features,
+                "segmentation_results": segmentation_results,
+                "file_info": {
+                    "filename": image.filename,
+                    "size": len(file_bytes),
+                    "content_type": image.content_type
+                }
+            },
+            "message": "图像分析完成"
+        }
+        
+    except Exception as e:
+        logger.error(f"图像分析时出错: {e}")
+        raise HTTPException(status_code=500, detail=f"图像分析失败: {str(e)}")
+
+
+@app.get("/api/v1/system/status")
+async def get_system_status() -> Dict[str, Any]:
+    """获取系统状态信息"""
+    try:
+        from .config import UPLOAD_DIRS
+        import os
+        
+        # 检查目录状态
+        directory_status = {}
+        for name, path in UPLOAD_DIRS.items():
+            directory_status[name] = {
+                "exists": path.exists(),
+                "path": str(path),
+                "file_count": len(list(path.glob("*"))) if path.exists() else 0
+            }
+        
+        # 模型状态
+        model_status = {
+            "models_loaded": len(ai_model_manager.models),
+            "scalers_loaded": len(ai_model_manager.scalers),
+            "has_metrics": bool(ai_model_manager.model_metrics)
+        }
+        
+        return {
+            "status": "success",
+            "data": {
+                "directories": directory_status,
+                "models": model_status,
+                "processor_status": "ready"
+            },
+            "message": "系统状态正常"
+        }
+        
+    except Exception as e:
+        logger.error(f"获取系统状态时出错: {e}")
+        raise HTTPException(status_code=500, detail=f"获取系统状态失败: {str(e)}")
+
+
+@app.post("/api/v1/models/retrain")
+async def retrain_models(sample_size: int = 5000) -> Dict[str, Any]:
+    """重新训练AI模型"""
+    try:
+        logger.info(f"开始重新训练模型，样本数量: {sample_size}")
+        
+        # 生成新的训练数据
+        X_new, y_new = generate_synthetic_dataset(sample_size)
+        
+        # 重新训练增强模型
+        ai_model_manager.train_enhanced_models(X_new, y_new)
+        
+        # 保存模型
+        ai_model_manager.save_models()
+        
+        # 获取新的性能指标
+        performance = ai_model_manager.get_model_performance()
+        
+        return {
+            "status": "success",
+            "data": {
+                "training_samples": sample_size,
+                "performance": performance
+            },
+            "message": "模型重新训练完成"
+        }
+        
+    except Exception as e:
+        logger.error(f"重新训练模型时出错: {e}")
+        raise HTTPException(status_code=500, detail=f"模型重新训练失败: {str(e)}")
+
+
+class BatchAssessRequest(BaseModel):
+    patients: list[Dict[str, Any]]
+    include_detailed_analysis: bool = True
+
+
+@app.post("/api/v1/assess/batch")
+async def batch_assess(request: BatchAssessRequest) -> Dict[str, Any]:
+    """批量风险评估"""
+    try:
+        logger.info(f"开始批量评估，患者数量: {len(request.patients)}")
+        
+        results = []
+        for i, patient_data in enumerate(request.patients):
+            try:
+                # 提取临床特征
+                clinical_features = {
+                    "age": float(patient_data.get("age", 45)),
+                    "bmi": float(patient_data.get("bmi", 24)),
+                    "smoking": 1.0 if patient_data.get("smoking", False) else 0.0,
+                    "alcohol": 1.0 if patient_data.get("alcohol", False) else 0.0,
+                    "family_history": 1.0 if patient_data.get("family_history", False) else 0.0,
+                    "symptom_score": float(patient_data.get("symptom_score", 3)),
+                    "cea_level": float(patient_data.get("lab_cea", 3)),
+                    "ca125_level": float(patient_data.get("lab_ca125", 20))
+                }
+                
+                # 使用AI模型预测
+                prediction_result = ai_model_manager.predict_risk_comprehensive(
+                    features=clinical_features,
+                    image_features=None,  # 批量评估暂不支持图像
+                    segmentation_results=None
+                )
+                
+                patient_result = {
+                    "patient_id": i,
+                    "patient_data": patient_data,
+                    "risk_score": prediction_result["risk_probability"],
+                    "risk_level": prediction_result["risk_level"],
+                    "confidence": prediction_result["confidence"],
+                    "recommendations": prediction_result["recommendations"]
+                }
+                
+                if request.include_detailed_analysis:
+                    patient_result["detailed_analysis"] = prediction_result["detailed_analysis"]
+                
+                results.append(patient_result)
+                
+            except Exception as e:
+                logger.error(f"处理第{i+1}个患者时出错: {e}")
+                results.append({
+                    "patient_id": i,
+                    "patient_data": patient_data,
+                    "error": str(e),
+                    "status": "failed"
+                })
+        
+        # 统计信息
+        successful_count = len([r for r in results if "error" not in r])
+        high_risk_count = len([r for r in results if r.get("risk_level") == "high"])
+        
+        return {
+            "status": "success",
+            "data": {
+                "results": results,
+                "summary": {
+                    "total_patients": len(request.patients),
+                    "successful_assessments": successful_count,
+                    "high_risk_patients": high_risk_count,
+                    "success_rate": successful_count / len(request.patients) if request.patients else 0
+                }
+            },
+            "message": f"批量评估完成，成功处理 {successful_count}/{len(request.patients)} 个患者"
+        }
+        
+    except Exception as e:
+        logger.error(f"批量评估时出错: {e}")
+        raise HTTPException(status_code=500, detail=f"批量评估失败: {str(e)}")

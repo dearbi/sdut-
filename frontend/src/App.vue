@@ -6,6 +6,12 @@
     <header>
       <h1 style="text-align: center;"><img src="./logo.png" alt="山东理工大学" style="height:53px; vertical-align: middle; margin-right: 16px;">肿瘤数智化筛查系统</h1>
       <p style="text-align: center;">多模态输入 · 个性化风险评估 · 可解释报告</p>
+      <nav class="main-nav">
+        <router-link to="/" class="nav-link">🏠 筛查评估</router-link>
+        <router-link to="/batch-assessment" class="nav-link">📋 批量评估</router-link>
+        <router-link to="/monitor" class="nav-link">📊 系统监控</router-link>
+        <router-link to="/admin" class="nav-link">⚙️ 管理后台</router-link>
+      </nav>
     </header>
     <router-view />
     <footer class="brand-footer">
@@ -84,5 +90,46 @@ p { color: var(--muted); margin: 0 0 8px; }
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
+}
+
+.main-nav {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.nav-link {
+  display: inline-block;
+  padding: 8px 16px;
+  border-radius: 8px;
+  color: var(--muted);
+  text-decoration: none;
+  border: 1px solid rgba(255,255,255,0.06);
+  transition: all 0.2s ease;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.nav-link:hover {
+  color: var(--text);
+  border-color: rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.02);
+}
+
+.nav-link.router-link-active {
+  color: var(--gold);
+  border-color: var(--gold);
+  background: rgba(212,175,55,0.08);
+}
+
+@media (max-width: 600px) {
+  .main-nav {
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+  }
 }
 </style>
