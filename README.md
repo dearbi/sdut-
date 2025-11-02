@@ -121,3 +121,121 @@
    - 通过虚拟现实（VR）或增强现实（AR）技术培训医生使用AI工具，提升接受度。
 
 
+# CTAI 肿瘤数智化筛查 — 快速开始（Quick Start）
+
+本项目是一个基于 FastAPI + Vue3 的肿瘤筛查原型系统，支持结构化数据与影像输入、风险评估、可解释输出与批量评估。
+
+## 环境要求
+- Python 3.9+
+- Node.js 16+（包含 npm）
+- Windows 推荐使用 PowerShell（Linux/Mac 亦可，命令略有差异）
+
+## 克隆项目
+```bash
+git clone <your-repo-url>
+cd 创新赛道
+```
+
+## 后端启动（FastAPI + Uvicorn）
+1) 进入后端目录并激活虚拟环境
+```bash
+cd backend
+python -m venv .venv
+\.venv\Scripts\activate  # Windows
+# source .venv/bin/activate  # Linux/Mac
+```
+
+2) 安装依赖
+```bash
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+3) 启动服务
+```bash
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+4) 健康检查
+```bash
+curl http://localhost:8000/api/v1/health
+```
+
+## 前端启动（Vue 3 + Vite）
+1) 进入前端目录并安装依赖
+```bash
+cd ../frontend
+npm install
+```
+
+2) 启动开发服务
+```bash
+npm run dev
+```
+
+- 默认访问地址：`http://localhost:5173/`（端口占用时 Vite 会升到 `5174`）
+
+## 快速验证
+- 在前端页面填写信息并点击“评估风险”即可查看结果（风险分值/等级/Top因素/建议）。
+- 也可以使用后端测试脚本：
+```bash
+cd ..  # 回到项目根目录
+python test_api.py
+```
+
+## API 示例
+### 风险评估（可选上传医学影像 PNG/JPG）
+```bash
+curl -X POST http://localhost:8000/api/v1/assess \
+  -F payload='{"age":45,"bmi":24,"smoking":false,"alcohol":false,"family_history":false,"symptom_score":3,"lab_cea":3,"lab_ca125":20}' \
+  -F image=@sample.png
+```
+
+### 批量评估（JSON）
+```bash
+curl -X POST http://localhost:8000/api/v1/assess/batch \
+  -H "Content-Type: application/json" \
+  -d '{"patients":[
+    {"age":45,"bmi":24,"smoking":false,"alcohol":false,"family_history":false,"symptom_score":3,"lab_cea":3,"lab_ca125":20},
+    {"age":60,"bmi":28,"smoking":true,"alcohol":true,"family_history":true,"symptom_score":6,"lab_cea":8,"lab_ca125":50}
+  ]}'
+```
+
+## 影像上传说明
+- 支持格式：`PNG`、`JPG`
+- 作用：后端会用 `Pillow` 与 `OpenCV (cv2)` 提取统计、纹理、边缘、形状与频域等特征，参与综合风险评估。
+- 隐私：不持久化原始影像，仅会话内处理。
+
+## 常见问题（FAQ）
+- `cv2` 导入失败：
+  ```bash
+  pip install opencv-python
+  ```
+- 端口冲突：
+  - 后端：使用 `--port 8001`
+  - 前端：`npm run dev -- --port 5175`
+- 跨域联调：后端已允许 `http://localhost:5173`，前端 `axios` 指向 `http://localhost:8000`。
+- Git 推送失败（远程有更新）：
+  ```bash
+  git pull origin main
+  # 解决冲突后再执行
+  git push origin main
+  ```
+
+## 项目结构
+```
+创新赛道/
+├── backend/           # FastAPI 后端
+│   ├── app/           # 业务代码（API/模型/图像处理）
+│   └── requirements.txt
+├── frontend/          # Vue3 前端
+│   └── src/           # 视图与路由
+├── docs/              # 文档与报告
+├── test_api.py        # 后端联调测试脚本
+└── sample_patients.csv# 批量评估示例数据
+```
+
+## 许可证
+- 原型项目，未设置明确开源许可证；如需开源请补充 LICENSE。
+
+

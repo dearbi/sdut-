@@ -99,6 +99,7 @@ p { color: var(--muted); margin: 0 0 8px; }
   margin-top: 16px;
   padding-top: 12px;
   border-top: 1px solid var(--border);
+
 }
 
 .nav-link {
