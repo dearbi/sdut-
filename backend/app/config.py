@@ -34,7 +34,7 @@ MODEL_CONFIG = {
 
 # 图像处理参数
 IMAGE_PROCESSING = {
-    "max_file_size": 50 * 1024 * 1024,  # 50MB
+    "max_file_size": 10 * 1024 * 1024,
     "target_size": (512, 512),
     "normalization": {
         "mean": [0.485, 0.456, 0.406],

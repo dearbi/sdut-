@@ -1,7 +1,7 @@
 <template>
   <div class="admin">
     <aside class="sidebar">
-      <div class="brand" style="text-align:center;">山理工奇思妙想队 <br>
+      <div class="brand" style="text-align:center;">神思杯-奇思妙想队 <br>
         肿瘤检测后台</div>
       <nav>
         <router-link to="/admin/dashboard" class="nav">仪表盘</router-link>

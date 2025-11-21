@@ -4,7 +4,7 @@
   </div>
   <div v-else class="container">
     <header>
-      <h1 style="text-align: center;"><img src="./logo.png" alt="山东理工大学" style="height:53px; vertical-align: middle; margin-right: 16px;">肿瘤数智化筛查系统</h1>
+      <h1 style="text-align: center;">肿瘤数智化筛查系统</h1>
       <p style="text-align: center;">多模态输入 · 个性化风险评估 · 可解释报告</p>
       <nav class="main-nav">
         <router-link to="/" class="nav-link">🏠 筛查评估</router-link>
@@ -16,8 +16,7 @@
     <router-view />
     <footer class="brand-footer">
       <div class="brand">
-        <img src="./logo.png" alt="山东理工大学" style="height: 34px; vertical-align: middle; margin-right: 8px;">
-        山理工神思妙想队项目
+        神思杯-神思妙想队项目
       </div>
       <small>声明：本原型仅用于技术演示，不替代临床诊断。</small>
     </footer>

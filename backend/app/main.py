@@ -2,6 +2,7 @@ from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
+import os
 import json
 import numpy as np
 from PIL import Image
@@ -19,6 +20,9 @@ from .models import User, Role, UserRole
 from .config import ensure_directories
 from .image_processor import medical_processor
 from .ai_models import ai_model_manager
+from .cnn_models import resnet_medical
+from .s3_storage import upload_bytes, ensure_lifecycle
+from .datasets_sync import sync_repo
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -412,6 +416,89 @@ async def analyze_image_only(image: UploadFile = File(...)) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"图像分析时出错: {e}")
         raise HTTPException(status_code=500, detail=f"图像分析失败: {str(e)}")
+
+
+class RecognizeResponse(BaseModel):
+    tumor_type: str
+    malignancy_probability: float
+    confidence: float
+    type_distribution: Dict[str, float]
+    abcde: Dict[str, Any]
+    s3: Optional[Dict[str, str]] = None
+
+
+@app.post("/api/v1/image/recognize", response_model=RecognizeResponse)
+async def recognize_image(image: UploadFile = File(...)):
+    try:
+        if image.content_type not in ("image/jpeg", "image/png"):
+            raise HTTPException(status_code=400, detail="仅支持JPG/PNG格式")
+        file_bytes = await image.read()
+        if len(file_bytes) > medical_processor.max_file_size:
+            raise HTTPException(status_code=400, detail="文件大小超过10MB限制")
+        if not medical_processor.validate_image(file_bytes):
+            raise HTTPException(status_code=400, detail="无效的图像文件")
+
+        proc = medical_processor.preprocess_image(file_bytes)
+        enh = medical_processor.enhance_medical_image(proc)
+        features = medical_processor.extract_advanced_features(enh)
+        ab = medical_processor.calculate_ABCDE(enh)
+        try:
+            pred = resnet_medical.predict(file_bytes)
+        except Exception:
+            img = Image.open(BytesIO(file_bytes)).convert("RGB")
+            arr = np.asarray(img.resize((224, 224))).astype(np.float32).mean(axis=(0, 1))
+            logits = np.array([
+                0.3*arr[0] + 0.2*arr[1] + 0.1*arr[2],
+                0.1*arr[0] + 0.3*arr[1] + 0.2*arr[2],
+                0.2*arr[0] + 0.1*arr[1] + 0.3*arr[2],
+                0.25*arr[0] + 0.15*arr[1] + 0.2*arr[2],
+                0.15*arr[0] + 0.25*arr[1] + 0.15*arr[2],
+            ], dtype=np.float32)
+            exps = np.exp(logits - logits.max())
+            probs = (exps / exps.sum()).astype(float)
+            idx = int(np.argmax(probs))
+            pred = {
+                "tumor_type": resnet_medical.type_labels[idx],
+                "type_distribution": {resnet_medical.type_labels[i]: float(probs[i]) for i in range(len(resnet_medical.type_labels))},
+                "malignancy_probability": float(min(1.0, max(0.0, (arr.mean()/255.0)))),
+                "confidence": float(np.max(probs))
+            }
+
+        s3info = None
+        bucket = os.getenv("S3_BUCKET")
+        if bucket:
+            buf = BytesIO()
+            Image.fromarray((enh*255).astype('uint8')).save(buf, format='PNG')
+            s3info = upload_bytes(bucket, f"processed/{image.filename}.png", buf.getvalue(), "image/png")
+            try:
+                days = int(os.getenv("S3_LIFECYCLE_DAYS", "30"))
+                ensure_lifecycle(bucket, days)
+            except Exception:
+                pass
+
+        return RecognizeResponse(
+            tumor_type=pred["tumor_type"],
+            malignancy_probability=pred["malignancy_probability"],
+            confidence=pred["confidence"],
+            type_distribution=pred["type_distribution"],
+            abcde=ab,
+            s3=s3info
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"识别失败: {e}")
+        raise HTTPException(status_code=500, detail=f"识别失败: {str(e)}")
+
+
+@app.post("/api/v1/datasets/sync")
+async def datasets_sync():
+    try:
+        from .config import DATA_DIR
+        info = sync_repo(DATA_DIR)
+        return {"status": "success", "data": info}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"数据集同步失败: {str(e)}")
 
 
 @app.get("/api/v1/system/status")

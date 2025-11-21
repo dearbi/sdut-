@@ -41,12 +41,15 @@
         </label>
         <label>
           影像上传（支持PNG/JPG）
-          <input type="file" accept="image/*" @change="onFile" />
+          <input type="file" accept=".jpg,.jpeg,.png" @change="onFile" />
         </label>
       </div>
 
-      <button type="submit">评估风险</button>
-    </form>
+      <div class="action-buttons">
+        <button type="submit">评估风险</button>
+        <button type="button" class="secondary" @click="recognizeImage" :disabled="!fileRef">识别</button>
+      </div>
+  </form>
   </div>
 
   <div v-if="result" class="card">
@@ -114,6 +117,36 @@
       <button @click="analyzeImageOnly" v-if="fileRef" class="secondary">单独分析图像</button>
     </div>
   </div>
+
+  <div v-if="recog" class="card">
+    <h2>识别结果</h2>
+    <div class="result-grid">
+      <div class="result-section">
+        <h3>总体</h3>
+        <p><strong>肿瘤类型：</strong>{{ recog.tumor_type }}</p>
+        <p><strong>良恶性概率：</strong>{{ pct(recog.malignancy_probability) }}</p>
+        <p><strong>置信度：</strong>{{ pct(recog.confidence) }}</p>
+      </div>
+      <div class="result-section">
+        <h3>类型分布</h3>
+        <div class="segmentation-grid">
+          <div v-for="(v,k) in recog.type_distribution" :key="k">
+            <strong>{{ k }}：</strong>{{ pct(v) }}
+          </div>
+        </div>
+      </div>
+      <div class="result-section">
+        <h3>ABCDE</h3>
+        <div class="segmentation-grid">
+          <div><strong>A：</strong>{{ fmt(recog.abcde?.A?.asymmetry) }}</div>
+          <div><strong>B：</strong>{{ fmt(recog.abcde?.B?.border) }}</div>
+          <div><strong>C：</strong>{{ fmt(recog.abcde?.C?.color_variation) }}</div>
+          <div><strong>D：</strong>{{ fmt(recog.abcde?.D?.diameter_px) }}</div>
+          <div><strong>E：</strong>{{ recog.abcde?.E?.evolving }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup>
@@ -134,9 +167,24 @@ const form = reactive({
 
 const fileRef = ref(null)
 const result = ref(null)
+const recog = ref(null)
+const preview = ref('')
 
 function onFile(e){
   fileRef.value = e.target.files?.[0] || null
+  if (fileRef.value){
+    if (!['image/jpeg','image/png'].includes(fileRef.value.type)){
+      alert('仅支持JPG/PNG格式')
+      fileRef.value = null
+      return
+    }
+    if (fileRef.value.size > 10 * 1024 * 1024){
+      alert('文件大小超过10MB')
+      fileRef.value = null
+      return
+    }
+    preview.value = URL.createObjectURL(fileRef.value)
+  }
 }
 
 function fmt(v){
@@ -171,6 +219,23 @@ async function analyzeImageOnly(){
     alert(`图像分析完成：\n状态：${data.status}\n尺寸：${data.dimensions?.join('×') || '未知'}\n特征数量：${data.features_extracted || 0}`)
   } catch (err){
     alert('图像分析失败：' + (err?.response?.data?.detail || err?.message || '未知错误'))
+  }
+}
+
+async function recognizeImage(){
+  if (!fileRef.value){
+    alert('请先选择图像文件')
+    return
+  }
+  try {
+    const fd = new FormData()
+    fd.append('image', fileRef.value)
+    const { data } = await api.post('/api/v1/image/recognize', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+    recog.value = data
+  } catch (err){
+    alert('识别失败：' + (err?.response?.data?.detail || err?.message || '未知错误'))
   }
 }
 

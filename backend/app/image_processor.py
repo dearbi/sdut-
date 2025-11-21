@@ -109,6 +109,41 @@ class MedicalImageProcessor:
         features['fft_std'] = float(np.std(fft_magnitude))
         
         return features
+
+    def calculate_ABCDE(self, img_array: np.ndarray) -> Dict[str, Any]:
+        if len(img_array.shape) == 3:
+            gray = cv2.cvtColor((img_array * 255).astype(np.uint8), cv2.COLOR_RGB2GRAY)
+        else:
+            gray = (img_array * 255).astype(np.uint8)
+        edges = cv2.Canny(gray, 50, 150)
+        contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        asymmetry = 0.0
+        border_irregularity = 0.0
+        color_var = float(np.std(gray))
+        diameter_px = 0.0
+        evolving = 'unknown'
+        if contours:
+            cnt = max(contours, key=cv2.contourArea)
+            area = cv2.contourArea(cnt)
+            peri = cv2.arcLength(cnt, True)
+            border_irregularity = float(4 * np.pi * area / (peri ** 2)) if peri > 0 else 0.0
+            x, y, w, h = cv2.boundingRect(cnt)
+            diameter_px = float(max(w, h))
+            M = cv2.moments(cnt)
+            if M['m00'] != 0:
+                cx = int(M['m10']/M['m00'])
+                cy = int(M['m01']/M['m00'])
+                left = gray[:, :cx]
+                right = np.fliplr(gray[:, cx:])
+                minw = min(left.shape[1], right.shape[1])
+                asymmetry = float(np.mean(np.abs(left[:, :minw] - right[:, :minw]))) / 255.0
+        return {
+            "A": {"asymmetry": asymmetry, "desc": "越大越不对称"},
+            "B": {"border": border_irregularity, "desc": "接近1更规则"},
+            "C": {"color_variation": color_var, "desc": "颜色差异越大风险越高"},
+            "D": {"diameter_px": diameter_px, "desc": "像素直径估计"},
+            "E": {"evolving": evolving, "desc": "需时间序列支持"}
+        }
     
     def _calculate_entropy(self, image: np.ndarray) -> float:
         """计算图像熵"""

@@ -11,9 +11,11 @@ import AdminUsers from '../views/admin/AdminUsers.vue'
 import AdminPatients from '../views/admin/AdminPatients.vue'
 import AdminResources from '../views/admin/AdminResources.vue'
 import AdminSchedules from '../views/admin/AdminSchedules.vue'
+import TumorRecognition from '../views/TumorRecognition.vue'
 
 const routes = [
   { path: '/', name: 'Home', component: Screening },
+  { path: '/recognition', name: 'TumorRecognition', component: TumorRecognition },
   { path: '/monitor', name: 'SystemMonitor', component: SystemMonitor },
   { path: '/batch-assessment', name: 'BatchAssessment', component: BatchAssessment },
   { path: '/admin/login', name: 'AdminLogin', component: AdminLogin },
