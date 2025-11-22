@@ -13,7 +13,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegression
 
-from .db import Base, engine, SessionLocal
+from .db import Base, engine, SessionLocal, ensure_schema
 from .auth import router as auth_router
 from .routers_admin import router as admin_router
 from .models import User, Role, UserRole
@@ -23,6 +23,7 @@ from .ai_models import ai_model_manager
 from .cnn_models import resnet_medical
 from .s3_storage import upload_bytes, ensure_lifecycle
 from .datasets_sync import sync_repo
+from .llm_client import optimize_report
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -30,6 +31,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="肿瘤数智化筛查后端", version="0.1.0")
 Base.metadata.create_all(bind=engine)
+ensure_schema()
 
 # 确保目录结构存在
 ensure_directories()
@@ -648,3 +650,22 @@ async def batch_assess(request: BatchAssessRequest) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"批量评估时出错: {e}")
         raise HTTPException(status_code=500, detail=f"批量评估失败: {str(e)}")
+class ReportOptimizeRequest(BaseModel):
+    patient: Dict[str, Any]
+    result: Dict[str, Any]
+
+
+@app.post("/api/v1/report/optimize")
+async def report_optimize(req: ReportOptimizeRequest) -> Dict[str, Any]:
+    patient = req.patient
+    result = req.result
+    html = {
+        "format": "html",
+        "content": "",
+        "optimized": False
+    }
+    base = await report(ReportRequest(patient=patient, result=result))
+    ok, improved = optimize_report(base["content"])
+    html["content"] = improved if ok else base["content"]
+    html["optimized"] = ok
+    return html

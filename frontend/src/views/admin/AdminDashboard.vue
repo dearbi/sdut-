@@ -46,8 +46,36 @@ onMounted(async () => {
 
 <style>
 .grid { display:grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-.stat { background: rgba(18,18,22,0.9); border:1px solid var(--border); border-radius: 12px; padding: 12px; }
-.label { color: var(--muted); }
-.value { font-size: 24px; font-weight: 700; background: linear-gradient(135deg, var(--gold), var(--gold-2)); -webkit-background-clip:text; background-clip:text; color:transparent; }
-@media (max-width: 900px){ .grid { grid-template-columns: repeat(2, 1fr); } }
+.stat { background: var(--surface); border:1px solid var(--border); border-radius: 12px; padding: 12px; backdrop-filter: blur(10px); transition: all 0.3s ease; }
+.stat:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(255,215,0,0.15); }
+.label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+.value { font-size: 24px; font-weight: 700; background: var(--gold-gradient); -webkit-background-clip:text; background-clip:text; color:transparent; }
+
+/* 风险分布样式 */
+.card ul { list-style: none; padding: 0; margin: 0; }
+.card li { 
+  background: var(--gold-hover); 
+  border: 1px solid var(--border); 
+  border-radius: 8px; 
+  padding: 8px 12px; 
+  margin-bottom: 8px; 
+  color: var(--text);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: all 0.2s ease;
+}
+.card li:hover { 
+  border-color: var(--gold);
+  background: rgba(255,215,0,0.15);
+}
+
+@media (max-width: 900px){ 
+  .grid { grid-template-columns: repeat(2, 1fr); } 
+}
+@media (max-width: 480px){ 
+  .grid { grid-template-columns: 1fr; } 
+  .stat { padding: 16px; }
+  .value { font-size: 20px; }
+}
 </style>

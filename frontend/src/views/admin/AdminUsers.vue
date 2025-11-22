@@ -33,7 +33,9 @@ async function fetchUsers(){
 
 async function createUser(){
   try {
-    await api.post('/admin/users', newUser.value)
+    const payload = { ...newUser.value }
+    if (!payload.email) delete payload.email
+    await api.post('/admin/users', payload)
     newUser.value = { username: '', password: '', email: '' }
     await fetchUsers()
   } catch (err){

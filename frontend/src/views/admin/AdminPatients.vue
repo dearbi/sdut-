@@ -12,11 +12,12 @@
     </form>
     <table style="margin-top:12px;">
       <thead>
-        <tr><th>ID</th><th>姓名</th><th>年龄</th><th>性别</th><th>风险</th><th>操作</th></tr>
+        <tr><th>ID</th><th>姓名</th><th>年龄</th><th>性别</th><th>风险</th><th>病历编号</th><th>就诊时间</th><th>操作</th></tr>
       </thead>
       <tbody>
         <tr v-for="p in patients" :key="p.id">
           <td>{{ p.id }}</td><td>{{ p.name }}</td><td>{{ p.age || '-' }}</td><td>{{ p.sex || '-' }}</td><td>{{ p.risk_level || '-' }}</td>
+          <td>{{ p.medical_record_no || '-' }}</td><td>{{ p.visit_time ? new Date(p.visit_time).toLocaleString() : '-' }}</td>
           <td><button @click="remove(p.id)" style="background:#b33;color:white;border:none;border-radius:8px;padding:6px 10px;">删除</button></td>
         </tr>
       </tbody>
@@ -61,7 +62,10 @@ onMounted(fetchPatients)
 <style>
 .grid { display:grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 label { display:flex; flex-direction:column; gap:6px; }
-input { background: rgba(18,18,22,0.9); border: 1px solid rgba(255,255,255,0.08); color: var(--text); border-radius: 10px; padding: 10px 12px; }
-button { background: linear-gradient(135deg, var(--gold), var(--gold-2)); color: #141416; border: none; border-radius: 12px; padding: 10px 18px; font-weight: 600; cursor: pointer; }
+input { background: rgba(42,42,42,0.9); border: 1px solid var(--border); color: var(--text); border-radius: 10px; padding: 10px 12px; transition: all 0.2s ease; }
+input:focus { border-color: var(--gold); box-shadow: 0 0 0 3px var(--gold-focus); }
+button { background: var(--gold-gradient); color: #121212; border: none; border-radius: 12px; padding: 10px 18px; font-weight: 600; cursor: pointer; position: relative; overflow: hidden; transition: all 0.3s ease; }
+button:hover { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(255,215,0,0.25); }
+button:active { transform: translateY(0); }
 @media (max-width: 900px){ .grid { grid-template-columns: 1fr; } }
 </style>

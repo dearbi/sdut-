@@ -42,6 +42,8 @@ class PatientCreate(BaseModel):
     contact: Optional[str] = None
     risk_level: Optional[str] = None
     notes: Optional[str] = None
+    external_id: Optional[str] = None
+    visit_time: Optional[datetime] = None
 
 class PatientOut(BaseModel):
     id: int
@@ -51,11 +53,24 @@ class PatientOut(BaseModel):
     contact: Optional[str]
     risk_level: Optional[str]
     notes: Optional[str]
+    external_id: Optional[str]
+    visit_time: Optional[datetime]
+    medical_record_no: Optional[str]
     created_at: datetime
     updated_at: datetime
 
     class Config:
         from_attributes = True
+
+class PatientSyncRequest(BaseModel):
+    name: str
+    external_id: Optional[str] = None
+    visit_time: Optional[datetime] = None
+    risk_level: Optional[str] = None
+    notes: Optional[str] = None
+    age: Optional[int] = None
+    sex: Optional[str] = None
+    contact: Optional[str] = None
 
 # Resource
 class ResourceCreate(BaseModel):

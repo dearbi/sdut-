@@ -105,15 +105,15 @@
     <div v-if="result.model_performance" class="result-section">
       <h3>模型性能指标</h3>
       <div class="performance-grid">
-        <div><strong>准确率：</strong>{{ fmt(result.model_performance.accuracy) }}</div>
-        <div><strong>精确率：</strong>{{ fmt(result.model_performance.precision) }}</div>
-        <div><strong>召回率：</strong>{{ fmt(result.model_performance.recall) }}</div>
-        <div><strong>F1分数：</strong>{{ fmt(result.model_performance.f1_score) }}</div>
+        <div><strong>准确率：</strong>{{ fmt(perf.accuracy) }}</div>
+        <div><strong>精确率：</strong>{{ fmt(perf.precision) }}</div>
+        <div><strong>召回率：</strong>{{ fmt(perf.recall) }}</div>
+        <div><strong>F1分数：</strong>{{ fmt(perf.f1_score) }}</div>
       </div>
     </div>
 
     <div class="action-buttons">
-      <button @click="generateReport">生成报告</button>
+      <button @click="generateReport" :disabled="optimizing">{{ optimizing ? '生成并优化中…' : '生成报告' }}</button>
       <button @click="analyzeImageOnly" v-if="fileRef" class="secondary">单独分析图像</button>
     </div>
   </div>
@@ -150,7 +150,8 @@
 </template>
 
 <script setup>
-import { reactive, ref } from 'vue'
+import { reactive, ref, computed } from 'vue'
+import { ElMessage } from 'element-plus'
 import api from '../services/api'
 
 const patient = reactive({ name: '', age: '' })
@@ -200,6 +201,7 @@ async function assess(){
     const { data } = await api.post('/api/v1/assess', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
     result.value = data
     patient.age = String(form.age)
+    await syncPatient()
   } catch (err){
     alert('评估失败：' + (err?.message || '未知错误'))
   }
@@ -239,23 +241,74 @@ async function recognizeImage(){
   }
 }
 
+async function postWithRetry(url, payload, attempts = 3){
+  let lastErr
+  for (let i = 0; i < attempts; i++){
+    try {
+      const { data } = await api.post(url, payload)
+      return data
+    } catch (err){
+      lastErr = err
+      await new Promise(res => setTimeout(res, 400 * (i + 1)))
+    }
+  }
+  throw lastErr
+}
+
+async function syncPatient(){
+  const now = new Date()
+  const payload = {
+    name: patient.name || '匿名',
+    external_id: `${Date.now()}`,
+    visit_time: now.toISOString(),
+    risk_level: result.value?.risk_level || undefined,
+    notes: '筛查同步',
+    age: form.age,
+    sex: undefined,
+    contact: undefined,
+  }
+  try {
+    const data = await postWithRetry('/admin/patients/sync', payload, 3)
+    ElMessage.success(`已同步患者：病历编号 ${data.medical_record_no}`)
+  } catch (err){
+    ElMessage.error('患者同步失败，请稍后在后台重试')
+  }
+}
+
 async function generateReport(){
   if (!result.value){
     alert('请先完成风险评估')
     return
   }
   try {
-    const { data } = await api.post('/api/v1/report', {
+    optimizing.value = true
+    const { data } = await api.post('/api/v1/report/optimize', {
       patient: { name: patient.name || '匿名', age: form.age },
       result: result.value,
     })
     const w = window.open('', '_blank')
     w.document.write(data.content)
     w.document.close()
+    ElMessage.success(data.optimized ? '报告已优化' : '已生成原始报告')
   } catch (err){
     alert('生成报告失败：' + (err?.message || '未知错误'))
+  } finally {
+    optimizing.value = false
   }
 }
+
+const perf = computed(() => {
+  const mp = result.value?.model_performance
+  const em = mp?.enhanced_models
+  const m = em?.metrics || {}
+  const acc = m?.risk_assessment?.cv_mean ?? 0
+  const f1 = m?.advanced_prediction?.cv_mean ?? 0
+  const prec = m?.feature_analysis?.cv_mean ?? 0
+  const recall = m?.advanced_prediction?.cv_mean ?? 0
+  return { accuracy: acc, precision: prec, recall, f1_score: f1 }
+})
+
+const optimizing = ref(false)
 </script>
 
 <style>
@@ -275,8 +328,8 @@ label { display: flex; flex-direction: column; gap: 8px; color: var(--text); }
 
 /* 统一所有文本输入框尺寸与间距 */
 input:not([type="checkbox"]) {
-  background: rgba(18,18,22,0.9);
-  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(42,42,42,0.9);
+  border: 1px solid var(--border);
   color: var(--text);
   border-radius: 10px;
   padding: 10px 12px;
@@ -286,6 +339,10 @@ input:not([type="checkbox"]) {
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
   box-sizing: border-box;
   margin: 0; /* 统一外边距 */
+}
+input:not([type="checkbox"]):focus {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px var(--gold-focus);
 }
 
 input[type="file"] { height: auto; padding: 8px 12px; }
@@ -298,15 +355,15 @@ input[type="checkbox"] {
   height: 18px;
   border: 2px solid var(--border);
   border-radius: 4px;
-  background: rgba(18,18,22,0.9);
+  background: rgba(42,42,42,0.9);
   position: relative;
   margin: 2px 0; /* 统一上下间距，与文本居中对齐 */
   cursor: pointer;
   transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
 }
-input[type="checkbox"]:hover { border-color: rgba(255,255,255,0.16); }
-input[type="checkbox"]:focus { box-shadow: 0 0 0 3px rgba(212,175,55,0.12); }
-input[type="checkbox"]:checked { border-color: var(--gold); background: rgba(212,175,55,0.12); }
+input[type="checkbox"]:hover { border-color: var(--gold); }
+input[type="checkbox"]:focus { box-shadow: 0 0 0 3px var(--gold-focus); }
+input[type="checkbox"]:checked { border-color: var(--gold); background: var(--gold-hover); }
 input[type="checkbox"]:checked::after {
   content: '';
   position: absolute;
@@ -318,8 +375,8 @@ input[type="checkbox"]:checked::after {
 }
 
 button {
-  background: linear-gradient(135deg, var(--gold), var(--gold-2));
-  color: #141416;
+  background: var(--gold-gradient);
+  color: #121212;
   border: none;
   border-radius: 12px;
   padding: 10px 18px;
@@ -328,19 +385,37 @@ button {
   transition: transform 0.12s ease, box-shadow 0.2s ease, opacity 0.2s ease;
   box-shadow: var(--shadow);
   height: 42px; /* 与输入框统一高度 */
+  position: relative;
+  overflow: hidden;
 }
-button:hover { transform: translateY(-1px); box-shadow: 0 12px 24px rgba(212,175,55,0.28); }
+button:hover { transform: translateY(-1px); box-shadow: 0 12px 24px rgba(255,215,0,0.28); }
 button:active { transform: translateY(0); opacity: 0.95; }
+button::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-radius: 50%;
+  background: var(--gold-ripple);
+  transform: translate(-50%, -50%);
+  transition: width 0.6s, height 0.6s;
+}
+button:active::before {
+  width: 300px;
+  height: 300px;
+}
 
 .tag {
   display:inline-block; padding:4px 8px; border-radius:8px;
-  background: rgba(212,175,55,0.12);
+  background: var(--gold-hover);
   color: var(--gold);
-  border: 1px solid rgba(212,175,55,0.35);
+  border: 1px solid var(--gold);
 }
 
 table { width:100%; border-collapse: collapse; margin-top: 12px; }
-td, th { border:1px solid rgba(255,255,255,0.08); padding:8px 10px; }
+td, th { border:1px solid var(--border); padding:8px 10px; }
 tr:nth-child(even) td { background: rgba(255,255,255,0.02); }
 
 @keyframes fadeInUp { 0% { opacity: 0; transform: translateY(8px);} 100% { opacity: 1; transform: translateY(0);} }
@@ -354,11 +429,12 @@ tr:nth-child(even) td { background: rgba(255,255,255,0.02); }
 }
 
 .result-section {
-  background: rgba(18,18,22,0.6);
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 16px;
   margin-bottom: 16px;
+  backdrop-filter: blur(10px);
 }
 
 .result-section h3 {
@@ -388,8 +464,8 @@ tr:nth-child(even) td { background: rgba(255,255,255,0.02); }
 }
 
 .recommendations li {
-  background: rgba(212,175,55,0.08);
-  border: 1px solid rgba(212,175,55,0.2);
+  background: var(--gold-hover);
+  border: 1px solid var(--gold);
   border-radius: 8px;
   padding: 8px 12px;
   margin-bottom: 8px;
@@ -412,11 +488,14 @@ tr:nth-child(even) td { background: rgba(255,255,255,0.02); }
   background: rgba(255,255,255,0.1);
   color: var(--text);
   border: 1px solid var(--border);
+  position: relative;
+  overflow: hidden;
 }
 
 .action-buttons button.secondary:hover {
   background: rgba(255,255,255,0.15);
   transform: translateY(-1px);
+  border-color: var(--gold);
 }
 
 @media (max-width: 720px){

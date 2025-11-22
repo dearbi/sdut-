@@ -21,8 +21,8 @@ api.interceptors.response.use(
   (resp) => resp,
   (err) => {
     if (err?.response?.status === 401) {
-      // 未授权跳转登录
-      if (location.pathname.startsWith('/admin')) {
+      const url = err?.config?.url || ''
+      if (url.startsWith('/admin')) {
         location.href = '/admin/login'
       }
     }

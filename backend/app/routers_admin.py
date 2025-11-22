@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from typing import List
 from datetime import datetime
 
 from .db import SessionLocal
-from .models import User, Role, Department, UserRole, Patient, Resource, Schedule
-from .schemas import UserCreate, UserOut, RoleCreate, DepartmentCreate, PatientCreate, PatientOut, ResourceCreate, ResourceOut, ScheduleCreate, ScheduleOut
+from .models import User, Role, Department, UserRole, Patient, Resource, Schedule, AuditLog
+from .schemas import UserCreate, UserOut, RoleCreate, DepartmentCreate, PatientCreate, PatientOut, ResourceCreate, ResourceOut, ScheduleCreate, ScheduleOut, PatientSyncRequest
 from .auth import get_current_user, require_roles
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -95,6 +96,33 @@ def delete_patient(patient_id: int, db: Session = Depends(get_db), _: User = Dep
     db.commit()
     return {"ok": True}
 
+# Sync from screening page
+@router.post("/patients/sync", response_model=PatientOut)
+def sync_patient(req: PatientSyncRequest, db: Session = Depends(get_db), user: User = Depends(require_roles(["admin", "clinician", "staff"]))):
+    if not req.name:
+        raise HTTPException(status_code=400, detail="name is required")
+    from datetime import datetime
+    import secrets
+    mrn = f"MRN-{datetime.utcnow().strftime('%Y%m%d')}-{secrets.token_hex(4).upper()}"
+    patient = Patient(
+        name=req.name,
+        age=req.age,
+        sex=req.sex,
+        contact=req.contact,
+        risk_level=req.risk_level,
+        notes=req.notes,
+        external_id=req.external_id,
+        visit_time=req.visit_time or datetime.utcnow(),
+        medical_record_no=mrn,
+    )
+    db.add(patient)
+    db.commit()
+    db.refresh(patient)
+    log = AuditLog(user_id=user.id, action="patient_sync", detail=f"name={patient.name} mrn={patient.medical_record_no}")
+    db.add(log)
+    db.commit()
+    return patient
+
 # Resources
 
 @router.get("/resources", response_model=List[ResourceOut])
@@ -131,11 +159,11 @@ def dashboard_metrics(db: Session = Depends(get_db), _: User = Depends(require_r
     patient_count = db.query(Patient).count()
     resource_count = db.query(Resource).count()
     schedule_count = db.query(Schedule).count()
-    # risk distribution
     risk = {}
-    for rl, cnt in db.query(Patient.risk_level,).all():
+    rows = db.query(Patient.risk_level, func.count(Patient.id)).group_by(Patient.risk_level).all()
+    for rl, cnt in rows:
         if rl:
-            risk[rl] = risk.get(rl, 0) + 1
+            risk[rl] = cnt
     return {
         "users": user_count,
         "patients": patient_count,

@@ -35,10 +35,13 @@ class Patient(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(80), nullable=False)
     age = Column(Integer, nullable=True)
-    sex = Column(String(10), nullable=True)  # 男/女/其他
+    sex = Column(String(10), nullable=True)
     contact = Column(String(100), nullable=True)
     risk_level = Column(String(20), nullable=True)
     notes = Column(Text, nullable=True)
+    external_id = Column(String(64), nullable=True, index=True)
+    visit_time = Column(DateTime, nullable=True, index=True)
+    medical_record_no = Column(String(32), nullable=True, unique=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -59,3 +62,12 @@ class Schedule(Base):
     end_time = Column(DateTime, nullable=False)
     status = Column(String(20), default='scheduled')  # scheduled/cancelled/completed
     created_by = Column(Integer, ForeignKey('users.id'))
+
+
+class AuditLog(Base):
+    __tablename__ = 'audit_logs'
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=True)
+    action = Column(String(64), nullable=False)
+    detail = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
